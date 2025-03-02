@@ -67,7 +67,6 @@ public class JwtUtil {
         return tokenBlacklist.contains(token);
     }
 
-
     public SecretKey getSecretKey(){
         byte[] keyBytes = Decoders.BASE64.decode(JWT_KEY);
         return Keys.hmacShaKeyFor(keyBytes);

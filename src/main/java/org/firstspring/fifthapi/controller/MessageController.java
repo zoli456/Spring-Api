@@ -8,8 +8,10 @@ import org.firstspring.fifthapi.repository.MessageRepository;
 import org.firstspring.fifthapi.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -28,6 +30,7 @@ public class MessageController {
         this.userRepository = userRepository;
     }
 
+    @PreAuthorize("hasRole('USER')")
     @PostMapping
     public ResponseEntity<String> addMessage(@RequestBody String content) {
         if (content == null || content.trim().isEmpty()) {
@@ -49,6 +52,7 @@ public class MessageController {
         return ResponseEntity.ok("Message added successfully!");
     }
 
+    @PreAuthorize("hasRole('USER')")
     @GetMapping
     public List<MessageDTO> getMessages() {
         return messageRepository.findAll().stream()
@@ -60,7 +64,58 @@ public class MessageController {
                 ))
                 .collect(Collectors.toList());
     }
+
+    @PreAuthorize("hasRole('USER')")
+    @PutMapping("/{id}")
+    public ResponseEntity<String> updateMessage(@PathVariable Long id, @RequestBody String newContent) {
+        if (newContent == null || newContent.trim().isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Message content cannot be empty!");
+        }
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String username = authentication.getName();
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(role -> role.equals("ROLE_ADMIN"));
+
+        Optional<Message> messageOptional = messageRepository.findById(id);
+        if (messageOptional.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Message not found!");
+        }
+
+        Message message = messageOptional.get();
+        if (!message.getSender().getUsername().equals(username) && !isAdmin) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("You can only edit your own messages!");
+        }
+
+        message.setContent(newContent);
+        messageRepository.save(message);
+        return ResponseEntity.ok("Message updated successfully!");
+    }
+    @PreAuthorize("hasRole('USER')")
+    @DeleteMapping("/{id}")
+    public ResponseEntity<String> deleteMessage(@PathVariable Long id) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String username = authentication.getName();
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(role -> role.equals("ROLE_ADMIN"));
+
+        Optional<Message> messageOptional = messageRepository.findById(id);
+        if (messageOptional.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Message not found!");
+        }
+
+        Message message = messageOptional.get();
+        if (!message.getSender().getUsername().equals(username) && !isAdmin) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("You can only delete your own messages!");
+        }
+
+        messageRepository.delete(message);
+        return ResponseEntity.ok("Message deleted successfully!");
+    }
 }
+
 @Data
 class MessageDTO {
     private Long id;

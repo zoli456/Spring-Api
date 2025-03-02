@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+
+import java.util.List;
 import java.util.Optional;
 
 @RestController
@@ -93,61 +95,6 @@ public class UserController {
         return ResponseEntity.status(HttpStatus.CREATED).body("User registered successfully");
     }
 
-    @PutMapping("/change")
-    public ResponseEntity<?> changeUserDetails(@Valid @RequestBody ChangeRequest changeRequest) {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        String currentUsername = authentication.getName();
-
-        Optional<UserEntity> currentUserOpt = userRepository.findByUsername(currentUsername);
-        if (currentUserOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Current user not found");
-        }
-        UserEntity currentUser = currentUserOpt.get();
-
-        boolean isAdmin = currentUser.getRoles().stream().anyMatch(role -> role.getName().equals("ROLE_ADMIN"));
-
-        UserEntity targetUser;
-
-        if (isAdmin && changeRequest.getUserId() != null) {
-            // Admin updating another user
-            Optional<UserEntity> targetUserOpt = userRepository.findById(changeRequest.getUserId());
-            if (targetUserOpt.isEmpty()) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found");
-            }
-            targetUser = targetUserOpt.get();
-        } else {
-            // Regular user updating their own details
-            targetUser = currentUser;
-        }
-
-        // Validate and set new username
-        if (changeRequest.getNewUsername() != null && !changeRequest.getNewUsername().isEmpty()) {
-            if (userRepository.findByUsername(changeRequest.getNewUsername()).isPresent() &&
-                    !targetUser.getUsername().equals(changeRequest.getNewUsername())) {
-                return ResponseEntity.status(HttpStatus.CONFLICT).body("Username already exists");
-            }
-            targetUser.setUsername(changeRequest.getNewUsername());
-        }
-
-        // Validate and set new email
-        if (changeRequest.getNewEmail() != null && !changeRequest.getNewEmail().isEmpty()) {
-            if (userRepository.findByEmail(changeRequest.getNewEmail()).isPresent() &&
-                    !targetUser.getEmail().equals(changeRequest.getNewEmail())) {
-                return ResponseEntity.status(HttpStatus.CONFLICT).body("Email already in use");
-            }
-            targetUser.setEmail(changeRequest.getNewEmail());
-        }
-
-        // Validate and set new password
-        if (changeRequest.getNewPassword() != null && !changeRequest.getNewPassword().isEmpty()) {
-            targetUser.setPassword(passwordEncoder.encode(changeRequest.getNewPassword()));
-        }
-
-        userRepository.save(targetUser);
-        return ResponseEntity.ok("User details updated successfully");
-    }
-
-
     @GetMapping("/userid")
     public ResponseEntity<?> getUserIdFromToken(@RequestHeader("Authorization") String token) {
         if (token == null || !token.startsWith("Bearer ")) {
@@ -163,6 +110,32 @@ public class UserController {
 
         return ResponseEntity.ok(userOpt.get().getId());
     }
+    @GetMapping("/me")
+    public ResponseEntity<?> getCurrentUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("User is not authenticated");
+        }
+
+        String username = authentication.getName();
+        Optional<UserEntity> userOpt = userRepository.findByUsername(username);
+
+        if (userOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found");
+        }
+
+        UserEntity user = userOpt.get();
+
+        UserResponse userResponse = new UserResponse(
+                user.getId(),
+                user.getUsername(),
+                user.getEmail(),
+                user.getRoles().stream().map(RoleEntity::getName).toList()
+        );
+
+        return ResponseEntity.ok(userResponse);
+    }
 }
 @Setter
 @Getter
@@ -175,7 +148,7 @@ class AuthRequest {
 
 @Getter
 class AuthResponse {
-    private String token;
+    private final String token;
     public AuthResponse(String token) {
         this.token = token;
     }
@@ -198,18 +171,18 @@ class RegisterRequest {
     private String email;
 }
 
-@Setter
 @Getter
-class ChangeRequest {
-    private Long userId;
+@Setter
+class UserResponse {
+    private Long id;
+    private String username;
+    private String email;
+    private List<String> roles;
 
-    @Size(min = 3, max = 20)
-    private String newUsername;
-
-    @Size(min = 3, max = 50)
-    private String newPassword;
-
-    @Email
-    @Size(max = 50)
-    private String newEmail;
+    public UserResponse(Long id, String username, String email, List<String> roles) {
+        this.id = id;
+        this.username = username;
+        this.email = email;
+        this.roles = roles;
+    }
 }
